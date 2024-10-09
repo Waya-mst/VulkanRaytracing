@@ -1,0 +1,5 @@
+C:/Users/kamee/Documents/Visual Studio 2022/Projects/VulkanRaytracing/out/build/x64-debug/CMakeFiles/edit_cache.dir
+C:/Users/kamee/Documents/Visual Studio 2022/Projects/VulkanRaytracing/out/build/x64-debug/CMakeFiles/rebuild_cache.dir
+C:/Users/kamee/Documents/Visual Studio 2022/Projects/VulkanRaytracing/out/build/x64-debug/src/CMakeFiles/VulkanTutorial-src.dir
+C:/Users/kamee/Documents/Visual Studio 2022/Projects/VulkanRaytracing/out/build/x64-debug/src/CMakeFiles/edit_cache.dir
+C:/Users/kamee/Documents/Visual Studio 2022/Projects/VulkanRaytracing/out/build/x64-debug/src/CMakeFiles/rebuild_cache.dir
