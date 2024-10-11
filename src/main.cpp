@@ -34,6 +34,11 @@ private:
 	vk::UniqueCommandPool commandPool;
 	vk::UniqueCommandBuffer commandBuffer;
 
+	vk::SurfaceFormatKHR surfaceFormat;
+	vk::UniqueSwapchainKHR swapchain;
+	std::vector<vk::Image> swapchainImages;
+	std::vector<vk::UniqueImageView> swapchainImageViews;
+
 	void initWindow() {
 		glfwInit();
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -59,14 +64,25 @@ private:
 			VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
 		};
 		physicalDevice = vkutils::pickPhysicalDevice(*instance, *surface, deviceExtensions);
+		VkPhysicalDeviceProperties physProp;
+		vkGetPhysicalDeviceProperties(physicalDevice, &physProp);
+		std::cout << "Device Name: " << physProp.deviceName << std::endl;
 
 		queueFamilyIndex = vkutils::findGeneralQueueFamily(physicalDevice, *surface);
-		std::cout << "queue family index" << queueFamilyIndex << std::endl;
+		std::cout << "queue family index: " << queueFamilyIndex << std::endl;
 		device = vkutils::createLogicalDevice(physicalDevice, queueFamilyIndex, deviceExtensions);
 		queue = device->getQueue(queueFamilyIndex, 0);
 
 		commandPool = vkutils::createCommandPool(*device, queueFamilyIndex);
 		commandBuffer = vkutils::createCommandBuffer(*device, *commandPool);
+
+		surfaceFormat = vkutils::chooseSurfaceFormat(physicalDevice, *surface);
+		swapchain = vkutils::createSwapchain(
+			physicalDevice, *device, *surface, queueFamilyIndex,
+			vk::ImageUsageFlagBits::eStorage, surfaceFormat,
+			width, height);
+
+		swapchainImages = device->getSwapchainImagesKHR(*swapchain);
 	}
 };
 
