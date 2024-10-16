@@ -83,7 +83,29 @@ private:
 			width, height);
 
 		swapchainImages = device->getSwapchainImagesKHR(*swapchain);
+
+		createSwapchainImageViews();
 	}
+
+	void createSwapchainImageViews() {
+		for (auto image : swapchainImages) {
+			vk::ImageViewCreateInfo createInfo{};
+			createInfo.setImage(image);
+			createInfo.setViewType(vk::ImageViewType::e2D);
+			createInfo.setFormat(surfaceFormat.format);
+			createInfo.setComponents({ vk::ComponentSwizzle::eR, vk::ComponentSwizzle::eG, vk::ComponentSwizzle::eB, vk::ComponentSwizzle::eA });
+			createInfo.setSubresourceRange({ vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 });
+			swapchainImageViews.push_back(device->createImageViewUnique(createInfo));
+		}
+
+		vkutils::oneTimeSubmit(*device, *commandPool, queue,
+			[&](vk::CommandBuffer commandBuffer) {
+				for (auto image : swapchainImages) {
+					vkutils::setImageLayout(commandBuffer, image,
+						vk::ImageLayout::eUndefined, vk::ImageLayout::ePresentSrcKHR);
+				}
+			});
+	};
 };
 
 int main() {
