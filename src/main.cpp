@@ -3,7 +3,7 @@
 constexpr uint32_t width = 800;
 constexpr uint32_t height = 600;
 
-struct {
+struct Buffer {
 	vk::UniqueBuffer buffer;
 	vk::UniqueDeviceMemory memory;
 	vk::DeviceAddress address;
@@ -52,6 +52,15 @@ struct {
 	}
 };
 
+struct Vertex {
+	float pose[3];
+};
+
+struct AccelStruct {
+	vk::UniqueAccelerationStructureKHR accel;
+	Buffer buffer;
+};
+
 class Application
 {
 public:
@@ -87,6 +96,8 @@ private:
 	vk::UniqueSwapchainKHR swapchain;
 	std::vector<vk::Image> swapchainImages;
 	std::vector<vk::UniqueImageView> swapchainImageViews;
+
+	AccelStruct bottomAccel{};
 
 	void initWindow() {
 		glfwInit();
@@ -134,6 +145,8 @@ private:
 		swapchainImages = device->getSwapchainImagesKHR(*swapchain);
 
 		createSwapchainImageViews();
+
+		createBottomLevelAS();
 	}
 
 	void createSwapchainImageViews() {
@@ -155,6 +168,38 @@ private:
 				}
 			});
 	};
+
+	void createBottomLevelAS() {
+		std::cout << "Create BLAS\n";
+
+		std::vector<Vertex> vertices = {
+			{{1.0f, 1.0f, 0.0f}},
+			{{-1.0f, 1.0f, 0.0f}},
+			{{0.0f, -1.0f, 0.0f}},
+		};
+		std::vector<uint32_t> indices = { 0, 1, 2 };
+
+		vk::BufferUsageFlags bufferUsage{
+			vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
+			vk::BufferUsageFlagBits::eShaderDeviceAddress };
+
+		vk::MemoryPropertyFlags memoryProperty{
+			vk::MemoryPropertyFlagBits::eHostVisible |
+			vk::MemoryPropertyFlagBits::eHostCoherent};
+
+		Buffer vertexBuffer;
+		Buffer indexBuffer;
+
+		vertexBuffer.init(physicalDevice, *device, 
+						  vertices.size() * sizeof(Vertex), bufferUsage, 
+						  memoryProperty, vertices.data());
+
+		indexBuffer.init(physicalDevice, *device, 
+						 indices.size() * sizeof(uint32_t), bufferUsage, 
+						 memoryProperty, indices.data());
+
+		vk::AccelerationStructureGeometryTrianglesDataKHR triangles{};
+	}
 };
 
 int main() {
