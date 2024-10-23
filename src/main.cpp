@@ -199,6 +199,17 @@ private:
 						 memoryProperty, indices.data());
 
 		vk::AccelerationStructureGeometryTrianglesDataKHR triangles{};
+		triangles.setVertexFormat(vk::Format::eR32G32B32Sfloat);
+		triangles.setVertexData(vertexBuffer.address);
+		triangles.setVertexStride(sizeof(Vertex));
+		triangles.setMaxVertex(static_cast<uint32_t>(vertices.size()));
+		triangles.setIndexType(vk::IndexType::eUint32);
+		triangles.setIndexData(indexBuffer.address);
+
+		vk::AccelerationStructureGeometryKHR geometry{};
+		geometry.setGeometryType(vk::GeometryTypeKHR::eTriangles);
+		geometry.setGeometry({ triangles });
+		geometry.setFlags(vk::GeometryFlagBitsKHR::eOpaque);
 	}
 };
 
