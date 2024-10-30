@@ -59,6 +59,58 @@ struct Vertex {
 struct AccelStruct {
 	vk::UniqueAccelerationStructureKHR accel;
 	Buffer buffer;
+
+	void init(vk::PhysicalDevice physicalDevice, vk::Device device,
+		vk::CommandPool commandPool, vk::Queue queue,
+		vk::AccelerationStructureTypeKHR type,
+		vk::AccelerationStructureGeometryKHR geometry,
+		uint32_t primitiveCount) {
+		
+		vk::AccelerationStructureBuildGeometryInfoKHR buildInfo{};
+		buildInfo.setType(type);
+		buildInfo.setMode(vk::BuildAccelerationStructureModeKHR::eBuild);
+		buildInfo.setFlags(vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace);
+		buildInfo.setGeometries(geometry);
+
+		vk::AccelerationStructureBuildSizesInfoKHR buildSizes =
+			device.getAccelerationStructureBuildSizesKHR(
+				vk::AccelerationStructureBuildTypeKHR::eDevice, buildInfo, primitiveCount);
+
+		buffer.init(physicalDevice, device,
+			buildSizes.accelerationStructureSize,
+			vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR,
+			vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+		vk::AccelerationStructureCreateInfoKHR createInfo{};
+		createInfo.setBuffer(*buffer.buffer);
+		createInfo.setSize(buildSizes.accelerationStructureSize);
+		createInfo.setType(type);
+		accel = device.createAccelerationStructureKHRUnique(createInfo);
+
+		Buffer scratchBuffer;
+		scratchBuffer.init(physicalDevice, device, buildSizes.buildScratchSize,
+			vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress,
+			vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+		buildInfo.setDstAccelerationStructure(*accel);
+		buildInfo.setScratchData(scratchBuffer.address);
+
+		vk::AccelerationStructureBuildRangeInfoKHR buildRangeInfo{};
+		buildRangeInfo.setPrimitiveCount(primitiveCount);
+		buildRangeInfo.setPrimitiveOffset(0);
+		buildRangeInfo.setFirstVertex(0);
+		buildRangeInfo.setTransformOffset(0);
+
+		vkutils::oneTimeSubmit(
+			device, commandPool, queue,
+			[&](vk::CommandBuffer commandBuffer) {
+				commandBuffer.buildAccelerationStructuresKHR(buildInfo, &buildRangeInfo);
+			});
+
+		vk::AccelerationStructureDeviceAddressInfoKHR addressInfo{};
+		addressInfo.setAccelerationStructure(*accel);
+		buffer.address = device.getAccelerationStructureAddressKHR(addressInfo);
+	}
 };
 
 class Application
@@ -210,6 +262,12 @@ private:
 		geometry.setGeometryType(vk::GeometryTypeKHR::eTriangles);
 		geometry.setGeometry({ triangles });
 		geometry.setFlags(vk::GeometryFlagBitsKHR::eOpaque);
+
+		uint32_t primitiveCount = static_cast<uint32_t>(indices.size() / 3);
+		bottomAccel.init(physicalDevice, *device, *commandPool, queue,
+			vk::AccelerationStructureTypeKHR::eBottomLevel,
+			geometry, primitiveCount);
+
 	}
 };
 
