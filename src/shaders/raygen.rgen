@@ -1,0 +1,32 @@
+#version 460
+#extension GL_EXT_ray_tracing : enable
+
+layout(location = 0) rayPayloadEXT vec3 payload;
+
+layout(binding = 0) uniform accelerationStructureEXT topLevelAS;
+layout(binding = 1, rgba8) uniform image2D image;
+
+void main(){
+    // vec2(0.5)はピクセルの中心からレイを飛ばすため. vec2(gl_LaunchSizeEXT.xyは解像度
+	vec2 uv = (vec2(gl_LaunchIDEXT.xy) + vec2(0.5)) / vec2(gl_LaunchSizeEXT.xy);
+    // カメラの視点を設定
+    vec3 origin = vec3(0, 0, 5);
+    vec3 target = vec3(uv * 2.0 - 1.0, 2);
+    vec3 direction = noemalize(target - origin);
+
+    payload = vec3(0.0, 0.0, 0.0);
+
+    traceRayEXT(
+        topLevelAS,
+        gl_RayFlagsOpaqueEXT,
+        0xff,
+        0, 0, 0,
+        origin,
+        0.001,
+        direction,
+        10000.0,
+        0
+    );
+
+    imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(payload, 0.0));
+}
