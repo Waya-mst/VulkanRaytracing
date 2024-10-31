@@ -150,6 +150,7 @@ private:
 	std::vector<vk::UniqueImageView> swapchainImageViews;
 
 	AccelStruct bottomAccel{};
+	AccelStruct topAccel{};
 
 	void initWindow() {
 		glfwInit();
@@ -199,6 +200,7 @@ private:
 		createSwapchainImageViews();
 
 		createBottomLevelAS();
+		createTopLevelAS();
 	}
 
 	void createSwapchainImageViews() {
@@ -268,6 +270,50 @@ private:
 			vk::AccelerationStructureTypeKHR::eBottomLevel,
 			geometry, primitiveCount);
 
+	}
+
+	void createTopLevelAS() {
+		std::cout << "Create TLAS\n";
+
+		vk::TransformMatrixKHR transform = std::array{
+			std::array{1.0f, 0.0f, 0.0f, 0.0f},
+			std::array{0.0f, 1.0f, 0.0f, 0.0f},
+			std::array{0.0f, 0.0f, 1.0f, 0.0f},
+		};
+
+		vk::AccelerationStructureInstanceKHR accelInstance{};
+		accelInstance.setTransform(transform);
+		accelInstance.setInstanceCustomIndex(0);
+		accelInstance.setMask(0xFF);
+		accelInstance.setInstanceShaderBindingTableRecordOffset(0);
+		accelInstance.setFlags(
+			vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable);
+		accelInstance.setAccelerationStructureReference(
+			bottomAccel.buffer.address);
+
+		Buffer instanceBuffer;
+		instanceBuffer.init(
+			physicalDevice, *device,
+			sizeof(vk::AccelerationStructureInstanceKHR),
+			vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
+			vk::BufferUsageFlagBits::eShaderDeviceAddress,
+			vk::MemoryPropertyFlagBits::eHostVisible |
+			vk::MemoryPropertyFlagBits::eHostCoherent,
+			&accelInstance);
+
+		vk::AccelerationStructureGeometryInstancesDataKHR instancesData{};
+		instancesData.setArrayOfPointers(false);
+		instancesData.setData(instanceBuffer.address);
+
+		vk::AccelerationStructureGeometryKHR geometry{};
+		geometry.setGeometryType(vk::GeometryTypeKHR::eInstances);
+		geometry.setGeometry({ instancesData });
+		geometry.setFlags(vk::GeometryFlagBitsKHR::eOpaque);
+
+		constexpr uint32_t primitiveCount = 1;
+		topAccel.init(physicalDevice, *device, *commandPool, queue,
+			vk::AccelerationStructureTypeKHR::eTopLevel,
+			geometry, primitiveCount);
 	}
 };
 
