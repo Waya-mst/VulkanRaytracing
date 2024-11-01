@@ -152,6 +152,10 @@ private:
 	AccelStruct bottomAccel{};
 	AccelStruct topAccel{};
 
+	std::vector<vk::UniqueShaderModule> shaderModules;
+	std::vector<vk::PipelineShaderStageCreateInfo> shaderStages;
+	std::vector<vk::RayTracingShaderGroupCreateInfoKHR> shaderGroups;
+
 	void initWindow() {
 		glfwInit();
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -201,6 +205,8 @@ private:
 
 		createBottomLevelAS();
 		createTopLevelAS();
+
+		prepareShaders();
 	}
 
 	void createSwapchainImageViews() {
@@ -314,6 +320,20 @@ private:
 		topAccel.init(physicalDevice, *device, *commandPool, queue,
 			vk::AccelerationStructureTypeKHR::eTopLevel,
 			geometry, primitiveCount);
+	}
+
+	void addShaders(uint32_t shaderIndex,
+		const std::string& filename,
+		vk::ShaderStageFlagBits stage) {
+		shaderModules[shaderIndex] =
+			vkutils::createShaderModule(*device, SHADER_DIR + filename);
+		shaderStages[shaderIndex].setStage(stage);
+		shaderStages[shaderIndex].setModule(*shaderModules[shaderIndex]);
+		shaderStages[shaderIndex].setPName("main");
+	}
+
+	void prepareShaders() {
+
 	}
 };
 
