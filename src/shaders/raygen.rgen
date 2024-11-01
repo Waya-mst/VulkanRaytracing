@@ -12,7 +12,7 @@ void main(){
     // カメラの視点を設定
     vec3 origin = vec3(0, 0, 5);
     vec3 target = vec3(uv * 2.0 - 1.0, 2);
-    vec3 direction = noemalize(target - origin);
+    vec3 direction = normalize(target - origin);
 
     payload = vec3(0.0, 0.0, 0.0);
 
