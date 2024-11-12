@@ -1,4 +1,5 @@
 #pragma once
+#include "config.h"
 #include "vkutils.hpp"
 
 constexpr uint32_t width = 800;
@@ -326,15 +327,18 @@ private:
 	void addShader(uint32_t shaderIndex,
 		const std::string& filename,
 		vk::ShaderStageFlagBits stage) {
+		std::cout << "Loading shader: " << SHADER_ROOT_DIR + filename << std::endl;
+
 		shaderModules[shaderIndex] =
-			vkutils::createShaderModule(*device, SHADER_DIR + filename);
+			vkutils::createShaderModule(*device, SHADER_ROOT_DIR + filename);
+		std::cout << "after createShader" << std::endl;
 		shaderStages[shaderIndex].setStage(stage);
 		shaderStages[shaderIndex].setModule(*shaderModules[shaderIndex]);
 		shaderStages[shaderIndex].setPName("main");
 	}
 
 	void prepareShaders() {
-		std::cout << "Preparte shaders\n";
+		std::cout << "Prepare shaders\n";
 
 		uint32_t raygenShader = 0;
 		uint32_t missShader = 1;
@@ -342,10 +346,15 @@ private:
 		shaderStages.resize(3);
 		shaderModules.resize(3);
 
+		std::cout << "before rgen" << std::endl;
 		addShader(raygenShader, "raygen.rgen.spv",
 			vk::ShaderStageFlagBits::eRaygenKHR);
+
+		std::cout << "before miss" << std::endl;
 		addShader(missShader, "miss.rmiss.spv",
 			vk::ShaderStageFlagBits::eMissKHR);
+
+		std::cout << "before chit" << std::endl;
 		addShader(chitShader, "closesthit.rchit.spv",
 			vk::ShaderStageFlagBits::eClosestHitKHR);
 
