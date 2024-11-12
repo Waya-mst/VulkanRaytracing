@@ -1,3 +1,4 @@
+#pragma once
 #include "vkutils.hpp"
 
 constexpr uint32_t width = 800;
@@ -322,7 +323,7 @@ private:
 			geometry, primitiveCount);
 	}
 
-	void addShaders(uint32_t shaderIndex,
+	void addShader(uint32_t shaderIndex,
 		const std::string& filename,
 		vk::ShaderStageFlagBits stage) {
 		shaderModules[shaderIndex] =
@@ -333,6 +334,49 @@ private:
 	}
 
 	void prepareShaders() {
+		std::cout << "Preparte shaders\n";
+
+		uint32_t raygenShader = 0;
+		uint32_t missShader = 1;
+		uint32_t chitShader = 2;
+		shaderStages.resize(3);
+		shaderModules.resize(3);
+
+		addShader(raygenShader, "raygen.rgen.spv",
+			vk::ShaderStageFlagBits::eRaygenKHR);
+		addShader(missShader, "miss.rmiss.spv",
+			vk::ShaderStageFlagBits::eMissKHR);
+		addShader(chitShader, "closesthit.rchit.spv",
+			vk::ShaderStageFlagBits::eClosestHitKHR);
+
+		uint32_t raygenGroup = 0;
+		uint32_t missGroup = 1;
+		uint32_t hitGroup = 2;
+		shaderGroups.resize(3);
+
+		// Raygen group
+		shaderGroups[raygenGroup].setType(
+			vk::RayTracingShaderGroupTypeKHR::eGeneral);
+		shaderGroups[raygenGroup].setGeneralShader(raygenShader);
+		shaderGroups[raygenGroup].setClosestHitShader(VK_SHADER_UNUSED_KHR);
+		shaderGroups[raygenGroup].setAnyHitShader(VK_SHADER_UNUSED_KHR);
+		shaderGroups[raygenGroup].setIntersectionShader(VK_SHADER_UNUSED_KHR);
+
+		// Miss group
+		shaderGroups[missGroup].setType(
+			vk::RayTracingShaderGroupTypeKHR::eGeneral);
+		shaderGroups[missGroup].setGeneralShader(missShader);
+		shaderGroups[missGroup].setClosestHitShader(VK_SHADER_UNUSED_KHR);
+		shaderGroups[missGroup].setAnyHitShader(VK_SHADER_UNUSED_KHR);
+		shaderGroups[missGroup].setIntersectionShader(VK_SHADER_UNUSED_KHR);
+
+		// Hit group
+		shaderGroups[hitGroup].setType(
+			vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup);
+		shaderGroups[hitGroup].setGeneralShader(VK_SHADER_UNUSED_KHR);
+		shaderGroups[hitGroup].setClosestHitShader(chitShader);
+		shaderGroups[hitGroup].setAnyHitShader(VK_SHADER_UNUSED_KHR);
+		shaderGroups[hitGroup].setIntersectionShader(VK_SHADER_UNUSED_KHR);
 
 	}
 };
