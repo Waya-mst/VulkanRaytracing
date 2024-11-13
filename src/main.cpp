@@ -158,6 +158,10 @@ private:
 	std::vector<vk::PipelineShaderStageCreateInfo> shaderStages;
 	std::vector<vk::RayTracingShaderGroupCreateInfoKHR> shaderGroups;
 
+	vk::UniqueDescriptorPool descPool;
+	vk::UniqueDescriptorSetLayout descSetLayout;
+	vk::UniqueDescriptorSet descSet;
+
 	void initWindow() {
 		glfwInit();
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -209,6 +213,10 @@ private:
 		createTopLevelAS();
 
 		prepareShaders();
+
+		createDescriptorPool();
+		createDescSetLayout();
+		createDescriptorSet();
 	}
 
 	void createSwapchainImageViews() {
@@ -387,6 +395,46 @@ private:
 		shaderGroups[hitGroup].setAnyHitShader(VK_SHADER_UNUSED_KHR);
 		shaderGroups[hitGroup].setIntersectionShader(VK_SHADER_UNUSED_KHR);
 
+	}
+
+	void createDescriptorPool() {
+		std::vector<vk::DescriptorPoolSize> poolSizes = {
+			{vk::DescriptorType::eAccelerationStructureKHR, 1},
+			{vk::DescriptorType::eStorageImage, 1},
+		};
+
+		vk::DescriptorPoolCreateInfo createInfo{};
+		createInfo.setPoolSizes(poolSizes);
+		createInfo.setMaxSets(1);
+		createInfo.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet);
+		descPool = device->createDescriptorPoolUnique(createInfo);
+	}
+
+	void createDescSetLayout() {
+		std::vector<vk::DescriptorSetLayoutBinding> bindings(2);
+
+		bindings[0].setBinding(0);
+		bindings[0].setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR);
+		bindings[0].setDescriptorCount(1);
+		bindings[0].setStageFlags(vk::ShaderStageFlagBits::eRaygenKHR);
+
+		bindings[1].setBinding(1);
+		bindings[1].setDescriptorType(vk::DescriptorType::eStorageImage);
+		bindings[1].setDescriptorCount(1);
+		bindings[1].setStageFlags(vk::ShaderStageFlagBits::eRaygenKHR);
+
+		vk::DescriptorSetLayoutCreateInfo createInfo{};
+		createInfo.setBindings(bindings);
+		descSetLayout = device->createDescriptorSetLayoutUnique(createInfo);
+	}
+
+	void createDescriptorSet() {
+		std::cout << "Create Descriptor Set\n";
+
+		vk::DescriptorSetAllocateInfo allocateInfo{};
+		allocateInfo.setDescriptorPool(*descPool);
+		allocateInfo.setSetLayouts(*descSetLayout);
+		descSet = std::move(device->allocateDescriptorSetsUnique(allocateInfo).front());
 	}
 };
 
