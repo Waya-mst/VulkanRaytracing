@@ -162,6 +162,9 @@ private:
 	vk::UniqueDescriptorSetLayout descSetLayout;
 	vk::UniqueDescriptorSet descSet;
 
+	vk::UniquePipeline pipeline;
+	vk::UniquePipelineLayout pipelineLayout;
+
 	void initWindow() {
 		glfwInit();
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -217,6 +220,8 @@ private:
 		createDescriptorPool();
 		createDescSetLayout();
 		createDescriptorSet();
+
+		createRayTracingPipeline();
 	}
 
 	void createSwapchainImageViews() {
@@ -435,6 +440,28 @@ private:
 		allocateInfo.setDescriptorPool(*descPool);
 		allocateInfo.setSetLayouts(*descSetLayout);
 		descSet = std::move(device->allocateDescriptorSetsUnique(allocateInfo).front());
+	}
+
+	void createRayTracingPipeline() {
+		std::cout << "Create pipeline" << std::endl;
+
+		vk::PipelineLayoutCreateInfo layoutCreateInfo{};
+		layoutCreateInfo.setSetLayouts(*descSetLayout);
+		pipelineLayout = device->createPipelineLayoutUnique(layoutCreateInfo);
+
+		vk::RayTracingPipelineCreateInfoKHR pipelineCreateInfo{};
+		pipelineCreateInfo.setLayout(*pipelineLayout);
+		pipelineCreateInfo.setStages(shaderStages);
+		pipelineCreateInfo.setGroups(shaderGroups);
+		pipelineCreateInfo.setMaxPipelineRayRecursionDepth(1);
+		auto result = device->createRayTracingPipelineKHRUnique(
+			nullptr, nullptr, pipelineCreateInfo);
+		if (result.result != vk::Result::eSuccess) {
+			std::cerr << "Failed to create ray tracing pipeline\n";
+			std::abort();
+		}
+
+		pipeline = std::move(result.value);
 	}
 };
 
