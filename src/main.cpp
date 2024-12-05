@@ -562,6 +562,8 @@ private:
 	void updateDescriptorSet(vk::ImageView imageView) {
 		// DescriptorSetはshader実行中に各頂点,各ピクセル毎に共通して使われるリソースをまとめるもの
 		// 今回はTLASと結果を書き込むためのイメージが共通リソースとして設定されてる
+		// イメージに関してはスワップチェーンの~枚目みたいな指定の仕方
+
 		std::vector<vk::WriteDescriptorSet> writes(2);
 
 		vk::WriteDescriptorSetAccelerationStructureKHR accelInfo{};
