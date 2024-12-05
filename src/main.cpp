@@ -124,6 +124,7 @@ public:
 
 		while (!glfwWindowShouldClose(window)) {
 			glfwPollEvents();
+			drawFrame();
 		}
 
 		glfwDestroyWindow(window);
@@ -535,6 +536,73 @@ private:
 		raygenRegion.setDeviceAddress(sbt.address);
 		missRegion.setDeviceAddress(sbt.address + raygenRegion.size);
 		hitRegion.setDeviceAddress(sbt.address + raygenRegion.size + missRegion.size);
+	}
+
+	void drawFrame() {
+		static int frame = 0;
+		std::cout << frame << '\n';
+		frame++;
+
+		vk::UniqueSemaphore imageAvailableSemaphore = device->createSemaphoreUnique({});
+
+		auto result = device->acquireNextImageKHR(
+			*swapchain, std::numeric_limits<uint64_t>::max(), *imageAvailableSemaphore);
+
+		if (result.result != vk::Result::eSuccess) {
+			std::cerr << "Failed to acquire next image.\n";
+			std::abort();
+		}
+
+		uint32_t imageIndex = result.value;
+
+		updateDescriptorSet(*swapchainImageViews[imageIndex]);
+		recordCommandBuffer(swapchainImages[imageIndex]);
+	}
+
+	void updateDescriptorSet(vk::ImageView imageView) {
+		// DescriptorSetはshader実行中に各頂点,各ピクセル毎に共通して使われるリソースをまとめるもの
+		// 今回はTLASと結果を書き込むためのイメージが共通リソースとして設定されてる
+		std::vector<vk::WriteDescriptorSet> writes(2);
+
+		vk::WriteDescriptorSetAccelerationStructureKHR accelInfo{};
+		accelInfo.setAccelerationStructures(*topAccel.accel);
+
+		writes[0].setDstSet(*descSet);
+		writes[0].setDstBinding(0);
+		writes[0].setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR);
+		writes[0].setPNext(&accelInfo);
+
+		vk::DescriptorImageInfo imageInfo{};
+		imageInfo.setImageView(imageView);
+		imageInfo.setImageLayout(vk::ImageLayout::eGeneral);
+
+		writes[1].setDstSet(*descSet);
+		writes[1].setDstBinding(1);
+		writes[1].setDescriptorType(vk::DescriptorType::eStorageImage);
+		writes[1].setImageInfo(imageInfo);
+
+		device->updateDescriptorSets(writes, nullptr);
+	}
+
+	void recordCommandBuffer(vk::Image image) {
+		commandBuffer->begin(vk::CommandBufferBeginInfo{});
+
+		vkutils::setImageLayout(*commandBuffer, image,
+			vk::ImageLayout::ePresentSrcKHR, vk::ImageLayout::eGeneral);
+
+		commandBuffer->bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, *pipeline);
+
+		commandBuffer->bindDescriptorSets(
+			vk::PipelineBindPoint::eRayTracingKHR,
+			*pipelineLayout, 0, *descSet, nullptr);
+
+		commandBuffer->traceRaysKHR(
+			raygenRegion, missRegion, hitRegion, {}, width, height, 1);
+
+		vkutils::setImageLayout(*commandBuffer, image,
+			vk::ImageLayout::eGeneral, vk::ImageLayout::ePresentSrcKHR);
+
+		commandBuffer->end();
 	}
 };
 
