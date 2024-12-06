@@ -1,6 +1,9 @@
 #pragma once
 #include "config.h"
 #include "vkutils.hpp"
+#include <imgui.h>
+#include <backends/imgui_impl_glfw.h>
+#include <backends/imgui_impl_vulkan.h>
 
 constexpr uint32_t width = 800;
 constexpr uint32_t height = 600;
@@ -132,6 +135,8 @@ public:
 	}
 
 private:
+	static ImGui_ImplVulkanH_Window g_MainWindowData;
+
 	GLFWwindow* window = nullptr;
 
 	vk::UniqueInstance instance;
@@ -412,13 +417,23 @@ private:
 
 	void createDescriptorPool() {
 		std::vector<vk::DescriptorPoolSize> poolSizes = {
-			{vk::DescriptorType::eAccelerationStructureKHR, 1},
-			{vk::DescriptorType::eStorageImage, 1},
+			{ vk::DescriptorType::eAccelerationStructureKHR, 1},
+			{ vk::DescriptorType::eSampler, 1000 },
+			{ vk::DescriptorType::eCombinedImageSampler, 1000 },
+			{ vk::DescriptorType::eSampledImage, 1000 },
+			{ vk::DescriptorType::eStorageImage, 1000 },
+			{ vk::DescriptorType::eUniformTexelBuffer, 1000 },
+			{ vk::DescriptorType::eStorageTexelBuffer, 1000 },
+			{ vk::DescriptorType::eUniformBuffer, 1000 },
+			{ vk::DescriptorType::eStorageBuffer, 1000 },
+			{ vk::DescriptorType::eUniformBufferDynamic, 1000 },
+			{ vk::DescriptorType::eStorageBufferDynamic, 1000 },
+			{ vk::DescriptorType::eInputAttachment, 1000 }
 		};
 
 		vk::DescriptorPoolCreateInfo createInfo{};
 		createInfo.setPoolSizes(poolSizes);
-		createInfo.setMaxSets(1);
+		createInfo.setMaxSets(1000 * poolSizes.size());
 		createInfo.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet);
 		descPool = device->createDescriptorPoolUnique(createInfo);
 	}

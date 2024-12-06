@@ -5,6 +5,8 @@ find_package(Vulkan     REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(glfw3       REQUIRED)
 
+add_subdirectory(libs/imgui)
+
 add_custom_command(
 	OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/raygen.rgen.spv
 	COMMAND ${Vulkan_GLSLC_EXECUTABLE} -c ${SHADER_ROOT_DIR}/raygen.rgen -o ${CMAKE_CURRENT_BINARY_DIR}/raygen.rgen.spv --target-env=vulkan1.2
@@ -44,4 +46,4 @@ target_compile_options (${PROJECT_NAME}-src PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/Z
 
 add_dependencies(${PROJECT_NAME}-src compile_shaders)
 
-target_link_libraries( ${PROJECT_NAME}-src PRIVATE Vulkan::Vulkan glm::glm glfw  )
+target_link_libraries( ${PROJECT_NAME}-src PRIVATE Vulkan::Vulkan glm::glm glfw imgui)
