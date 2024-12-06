@@ -557,6 +557,23 @@ private:
 
 		updateDescriptorSet(*swapchainImageViews[imageIndex]);
 		recordCommandBuffer(swapchainImages[imageIndex]);
+
+		vk::PipelineStageFlags waitStage{ vk::PipelineStageFlagBits::eTopOfPipe };
+		vk::SubmitInfo submitInfo{};
+		submitInfo.setWaitDstStageMask(waitStage);
+		submitInfo.setCommandBuffers(*commandBuffer);
+		submitInfo.setWaitSemaphores(*imageAvailableSemaphore);
+		queue.submit(submitInfo);
+
+		queue.waitIdle();
+
+		vk::PresentInfoKHR presentInfo{};
+		presentInfo.setSwapchains(*swapchain);
+		presentInfo.setImageIndices(imageIndex);
+		if (queue.presentKHR(presentInfo) != vk::Result::eSuccess) {
+			std::cerr << "Failed to present\n";
+			std::abort();
+		}
 	}
 
 	void updateDescriptorSet(vk::ImageView imageView) {
@@ -571,6 +588,7 @@ private:
 
 		writes[0].setDstSet(*descSet);
 		writes[0].setDstBinding(0);
+		writes[0].setDescriptorCount(1);
 		writes[0].setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR);
 		writes[0].setPNext(&accelInfo);
 
