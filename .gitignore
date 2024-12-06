@@ -1,2 +1,12 @@
 out
 .vs
+
+# imguiサブモジュール内の生成ファイル
+libs/imgui/*.o
+libs/imgui/*.obj
+libs/imgui/*.log
+libs/imgui/*.dll
+libs/imgui/*.so
+libs/imgui/*.exe
+libs/imgui/*.pdb
+libs/imgui/*.idb

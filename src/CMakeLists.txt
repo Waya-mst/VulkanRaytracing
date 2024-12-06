@@ -7,6 +7,12 @@ find_package(glfw3       REQUIRED)
 
 add_subdirectory(libs/imgui)
 
+if(NOT EXISTS "${CMAKE_SOURCE_DIR}/libs/imgui")
+    execute_process(
+        COMMAND git clone https://github.com/ocornut/imgui.git ${CMAKE_SOURCE_DIR}/libs/imgui
+    )
+endif()
+
 add_custom_command(
 	OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/raygen.rgen.spv
 	COMMAND ${Vulkan_GLSLC_EXECUTABLE} -c ${SHADER_ROOT_DIR}/raygen.rgen -o ${CMAKE_CURRENT_BINARY_DIR}/raygen.rgen.spv --target-env=vulkan1.2
