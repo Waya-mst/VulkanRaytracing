@@ -1,6 +1,6 @@
 ## libs
-clone imgui under src/libs
-add CMakeLists.txt in src/libs/imgui folder
+1. clone imgui under src/libs
+2. add CMakeLists.txt in src/libs/imgui folder
 ```
 cmake_minimum_required(VERSION 3.14)
 project(imgui)
