@@ -1,5 +1,6 @@
 out
 .vs
+libs/
 
 # imguiサブモジュール内の生成ファイル
 libs/imgui/*.o

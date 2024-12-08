@@ -1,6 +1,7 @@
 #pragma once
 #include "config.h"
 #include "vkutils.hpp"
+#include <array>
 #include <imgui.h>
 #include <backends/imgui_impl_glfw.h>
 #include <backends/imgui_impl_vulkan.h>
@@ -136,6 +137,7 @@ public:
 
 private:
 	static ImGui_ImplVulkanH_Window g_MainWindowData;
+	vk::UniqueRenderPass renderPass;
 
 	GLFWwindow* window = nullptr;
 
@@ -181,6 +183,8 @@ private:
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 		glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 		window = glfwCreateWindow(width, height, "vulkanRaytracing", nullptr, nullptr);
+
+		ImGui_ImplGlfw_InitForVulkan(window, true);
 	}
 
 	void initVulkan() {
@@ -223,6 +227,8 @@ private:
 
 		createSwapchainImageViews();
 
+		createRenderPass();
+
 		createBottomLevelAS();
 		createTopLevelAS();
 
@@ -256,6 +262,25 @@ private:
 				}
 			});
 	};
+
+	void createRenderPass() {
+		vk::AttachmentDescription colorAttachment({}, vk::Format::eB8G8R8A8Unorm,
+			vk::SampleCountFlagBits::e1,
+			vk::AttachmentLoadOp::eClear,
+			vk::AttachmentStoreOp::eStore,
+			vk::AttachmentLoadOp::eDontCare,
+			vk::AttachmentStoreOp::eDontCare,
+			vk::ImageLayout::eUndefined,
+			vk::ImageLayout::ePresentSrcKHR);
+
+		vk::AttachmentReference colorAttachmentRef(0, vk::ImageLayout::eColorAttachmentOptimal);
+
+		vk::SubpassDescription subpass({}, vk::PipelineBindPoint::eGraphics, {}, {}, 1, &colorAttachmentRef);
+
+		vk::RenderPassCreateInfo renderPassInfo({}, colorAttachment, subpass);
+
+		renderPass = device->createRenderPassUnique(renderPassInfo);
+	}
 
 	void createBottomLevelAS() {
 		std::cout << "Create BLAS\n";
@@ -629,16 +654,28 @@ private:
 
 		commandBuffer->bindDescriptorSets(
 			vk::PipelineBindPoint::eRayTracingKHR,
-			*pipelineLayout, 0, *descSet, nullptr);
+			*pipelineLayout,
+			0,
+			*descSet,
+			nullptr);
 
 		commandBuffer->traceRaysKHR(
-			raygenRegion, missRegion, hitRegion, {}, width, height, 1);
+			raygenRegion,
+			missRegion,
+			hitRegion,
+			{},
+			width,height, 1);
+
+		vk::RenderPassBeginInfo renderPassInfo{};
+		renderPassInfo.setRenderPass(*renderPass);
+		// renderPassInfo.setFramebuffer(frameBuffer);
 
 		vkutils::setImageLayout(*commandBuffer, image,
 			vk::ImageLayout::eGeneral, vk::ImageLayout::ePresentSrcKHR);
 
 		commandBuffer->end();
 	}
+
 };
 
 int main() {

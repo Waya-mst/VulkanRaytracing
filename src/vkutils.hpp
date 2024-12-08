@@ -264,7 +264,8 @@ namespace vkutils {
         vk::ImageUsageFlags usage,
         vk::SurfaceFormatKHR surfaceFormat,
         uint32_t width,
-        uint32_t height) {
+        uint32_t height,
+        vk::Extent2D swapchainExtent) {
         std::cout << "Create swapchain\n";
 
         vk::SurfaceCapabilitiesKHR capabilities =
@@ -291,6 +292,9 @@ namespace vkutils {
         createInfo.setPresentMode(presentMode);
         createInfo.setClipped(VK_TRUE);
         createInfo.setQueueFamilyIndices(queueFamilyIndex);
+
+        swapchainExtent = extent;
+        
         return device.createSwapchainKHRUnique(createInfo);
     }
 
