@@ -158,6 +158,9 @@ private:
 	vk::UniqueSwapchainKHR swapchain;
 	std::vector<vk::Image> swapchainImages;
 	std::vector<vk::UniqueImageView> swapchainImageViews;
+	std::vector<vk::UniqueFramebuffer> swapchainFramebuffers;
+
+	vk::Extent2D swapchainExtent;
 
 	AccelStruct bottomAccel{};
 	AccelStruct topAccel{};
@@ -167,6 +170,7 @@ private:
 	std::vector<vk::RayTracingShaderGroupCreateInfoKHR> shaderGroups;
 
 	vk::UniqueDescriptorPool descPool;
+	vk::UniqueDescriptorPool imGuiDescPool;
 	vk::UniqueDescriptorSetLayout descSetLayout;
 	vk::UniqueDescriptorSet descSet;
 
@@ -221,13 +225,14 @@ private:
 		swapchain = vkutils::createSwapchain(
 			physicalDevice, *device, *surface, queueFamilyIndex,
 			vk::ImageUsageFlagBits::eStorage, surfaceFormat,
-			width, height);
+			width, height, swapchainExtent);
 
 		swapchainImages = device->getSwapchainImagesKHR(*swapchain);
 
 		createSwapchainImageViews();
 
 		createRenderPass();
+		createFramebuffers();
 
 		createBottomLevelAS();
 		createTopLevelAS();
@@ -280,6 +285,16 @@ private:
 		vk::RenderPassCreateInfo renderPassInfo({}, colorAttachment, subpass);
 
 		renderPass = device->createRenderPassUnique(renderPassInfo);
+	}
+
+	void createFramebuffers() {
+		swapchainFramebuffers.reserve(swapchainImageViews.size());
+
+		for (auto const& view : swapchainImageViews) {
+			vk::FramebufferCreateInfo framebufferInfo({}, renderPass.get(), view.get(),
+				swapchainExtent.width, swapchainExtent.height, 1);
+			swapchainFramebuffers.push_back(device->createFramebufferUnique(framebufferInfo));
+		}
 	}
 
 	void createBottomLevelAS() {
@@ -443,24 +458,37 @@ private:
 	void createDescriptorPool() {
 		std::vector<vk::DescriptorPoolSize> poolSizes = {
 			{ vk::DescriptorType::eAccelerationStructureKHR, 1},
-			{ vk::DescriptorType::eSampler, 1000 },
-			{ vk::DescriptorType::eCombinedImageSampler, 1000 },
-			{ vk::DescriptorType::eSampledImage, 1000 },
-			{ vk::DescriptorType::eStorageImage, 1000 },
-			{ vk::DescriptorType::eUniformTexelBuffer, 1000 },
-			{ vk::DescriptorType::eStorageTexelBuffer, 1000 },
-			{ vk::DescriptorType::eUniformBuffer, 1000 },
-			{ vk::DescriptorType::eStorageBuffer, 1000 },
-			{ vk::DescriptorType::eUniformBufferDynamic, 1000 },
-			{ vk::DescriptorType::eStorageBufferDynamic, 1000 },
-			{ vk::DescriptorType::eInputAttachment, 1000 }
+			{ vk::DescriptorType::eStorageImage, 1 },
 		};
 
 		vk::DescriptorPoolCreateInfo createInfo{};
 		createInfo.setPoolSizes(poolSizes);
-		createInfo.setMaxSets(1000 * poolSizes.size());
+		createInfo.setMaxSets(1);
 		createInfo.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet);
 		descPool = device->createDescriptorPoolUnique(createInfo);
+
+		std::vector<vk::DescriptorPoolSize> imGuiPoolSizes = {
+			{vk::DescriptorType::eSampler,1000},
+			{vk::DescriptorType::eCombinedImageSampler,1000},
+			{vk::DescriptorType::eSampledImage,1000},
+			{vk::DescriptorType::eStorageImage,1000},
+			{vk::DescriptorType::eUniformTexelBuffer,1000},
+			{vk::DescriptorType::eStorageTexelBuffer,1000},
+			{vk::DescriptorType::eUniformBuffer,1000},
+			{vk::DescriptorType::eStorageBuffer,1000},
+			{vk::DescriptorType::eUniformBufferDynamic,1000},
+			{vk::DescriptorType::eStorageBufferDynamic,1000},
+			{vk::DescriptorType::eInputAttachment,1000}
+		};
+
+		vk::DescriptorPoolCreateInfo imGuiPoolInfo = {};
+		imGuiPoolInfo.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet);
+		imGuiPoolInfo.setMaxSets(1000);
+		imGuiPoolInfo.poolSizeCount = static_cast<uint32_t>(imGuiPoolSizes.size());
+		imGuiPoolInfo.pPoolSizes = imGuiPoolSizes.data();
+
+		imGuiDescPool = device->createDescriptorPoolUnique(imGuiPoolInfo);
+
 	}
 
 	void createDescSetLayout() {
@@ -666,16 +694,30 @@ private:
 			{},
 			width,height, 1);
 
-		vk::RenderPassBeginInfo renderPassInfo{};
-		renderPassInfo.setRenderPass(*renderPass);
-		// renderPassInfo.setFramebuffer(frameBuffer);
-
 		vkutils::setImageLayout(*commandBuffer, image,
 			vk::ImageLayout::eGeneral, vk::ImageLayout::ePresentSrcKHR);
 
 		commandBuffer->end();
 	}
 
+	void initImGui() {
+		ImGui_ImplVulkan_InitInfo initInfo = {};
+		initInfo.Instance = *instance;
+		initInfo.PhysicalDevice = physicalDevice;
+		initInfo.Device = *device;
+		initInfo.QueueFamily = queueFamilyIndex;
+		initInfo.Queue = queue;
+		initInfo.PipelineCache = VK_NULL_HANDLE;
+		initInfo.DescriptorPool = *imGuiDescPool;
+		initInfo.Allocator = nullptr;
+		initInfo.MinImageCount = 2;
+		initInfo.ImageCount = swapchainImages.size();
+		initInfo.RenderPass = *renderPass;
+		initInfo.CheckVkResultFn = nullptr;
+
+		ImGui_ImplVulkan_Init(&initInfo);
+		ImGui_ImplVulkan_CreateFontsTexture();
+	}
 };
 
 int main() {
