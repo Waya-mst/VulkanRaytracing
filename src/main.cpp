@@ -67,7 +67,7 @@ struct AccelStruct {
 	Buffer buffer;
 
 	void init(vk::PhysicalDevice physicalDevice, vk::Device device,
-		vk::CommandPool commandPool, vk::Queue queue,
+		VkCommandPool commandPool, vk::Queue queue,
 		vk::AccelerationStructureTypeKHR type,
 		vk::AccelerationStructureGeometryKHR geometry,
 		uint32_t primitiveCount) {
@@ -136,8 +136,10 @@ public:
 	}
 
 private:
-	static ImGui_ImplVulkanH_Window g_MainWindowData;
+	ImGui_ImplVulkanH_Window g_MainWindowData = {};
 	vk::UniqueRenderPass renderPass;
+	ImDrawData* draw_data;
+	ImGuiContext* imGuicontext;
 
 	GLFWwindow* window = nullptr;
 
@@ -188,7 +190,8 @@ private:
 		glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 		window = glfwCreateWindow(width, height, "vulkanRaytracing", nullptr, nullptr);
 
-		ImGui_ImplGlfw_InitForVulkan(window, true);
+		//initImGui();
+		//ImGui_ImplGlfw_InitForVulkan(window, true);
 	}
 
 	void initVulkan() {
@@ -201,12 +204,12 @@ private:
 		surface = vkutils::createSurface(*instance, window);
 
 		std::vector<const char*> deviceExtensions = {
-			VK_KHR_SWAPCHAIN_EXTENSION_NAME,
 			VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME,
 			VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
 			VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
 			VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
 			VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
+			VK_KHR_SWAPCHAIN_EXTENSION_NAME,
 		};
 		physicalDevice = vkutils::pickPhysicalDevice(*instance, *surface, deviceExtensions);
 		VkPhysicalDeviceProperties physProp;
@@ -246,6 +249,7 @@ private:
 		createRayTracingPipeline();
 
 		createShaderBindingTable();
+		
 	}
 
 	void createSwapchainImageViews() {
@@ -607,9 +611,7 @@ private:
 	}
 
 	void drawFrame() {
-		static int frame = 0;
-		std::cout << frame << '\n';
-		frame++;
+		//deawImGui();
 
 		vk::UniqueSemaphore imageAvailableSemaphore = device->createSemaphoreUnique({});
 
@@ -624,7 +626,7 @@ private:
 		uint32_t imageIndex = result.value;
 
 		updateDescriptorSet(*swapchainImageViews[imageIndex]);
-		recordCommandBuffer(swapchainImages[imageIndex]);
+		recordCommandBuffer(swapchainImages[imageIndex], &g_MainWindowData, draw_data);
 
 		vk::PipelineStageFlags waitStage{ vk::PipelineStageFlagBits::eTopOfPipe };
 		vk::SubmitInfo submitInfo{};
@@ -672,7 +674,20 @@ private:
 		device->updateDescriptorSets(writes, nullptr);
 	}
 
-	void recordCommandBuffer(vk::Image image) {
+	void recordCommandBuffer(vk::Image image, ImGui_ImplVulkanH_Window* wd, ImDrawData* draw_data) {
+		vk::Semaphore image_acquired_semaphore = wd->FrameSemaphores[wd->SemaphoreIndex].ImageAcquiredSemaphore;
+		vk::Semaphore render_complete_semaphore = wd->FrameSemaphores[wd->SemaphoreIndex].RenderCompleteSemaphore;
+		auto res = device->acquireNextImageKHR(wd->Swapchain, UINT64_MAX, image_acquired_semaphore);
+		wd->FrameIndex = res.value;
+
+		ImGui_ImplVulkanH_Frame* fd = &wd->Frames[wd->FrameIndex];
+
+		device->resetCommandPool(fd->CommandPool);
+		vk::CommandBufferBeginInfo info = {};
+		info.flags |= vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
+		
+		
+
 		commandBuffer->begin(vk::CommandBufferBeginInfo{});
 
 		vkutils::setImageLayout(*commandBuffer, image,
@@ -694,13 +709,33 @@ private:
 			{},
 			width,height, 1);
 
+		vk::RenderPassBeginInfo renderPassInfo{};
+		renderPassInfo.setRenderPass(*renderPass);
+		renderPassInfo.setFramebuffer(fd->Framebuffer);
+		vk::Rect2D rect({ 0,0 }, { (uint32_t)width,(uint32_t)height });
+
+		renderPassInfo.setRenderArea(rect);
+
+		commandBuffer->beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+
+		ImGui::Render();
+		draw_data = ImGui::GetDrawData();
+		ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), *commandBuffer);
+
+		commandBuffer->endRenderPass();
+
 		vkutils::setImageLayout(*commandBuffer, image,
 			vk::ImageLayout::eGeneral, vk::ImageLayout::ePresentSrcKHR);
+
+		
 
 		commandBuffer->end();
 	}
 
 	void initImGui() {
+		imGuicontext = ImGui::CreateContext();
+		ImGui::SetCurrentContext(imGuicontext);
+
 		ImGui_ImplVulkan_InitInfo initInfo = {};
 		initInfo.Instance = *instance;
 		initInfo.PhysicalDevice = physicalDevice;
@@ -717,6 +752,20 @@ private:
 
 		ImGui_ImplVulkan_Init(&initInfo);
 		ImGui_ImplVulkan_CreateFontsTexture();
+	}
+
+	void deawImGui() {
+		ImGui_ImplGlfw_NewFrame();
+		ImGui_ImplVulkan_NewFrame();
+		ImGui::NewFrame();
+
+		ImGui::Begin("Hello, world!");
+		float f = 0.0f;
+		ImGui::DragFloat("Drag", &f);
+		bool b = false;
+		ImGui::Checkbox("Check Box", &b);
+		ImGui::Text("Yeah");
+		ImGui::End();
 	}
 };
 
