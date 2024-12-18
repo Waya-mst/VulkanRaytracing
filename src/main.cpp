@@ -9,6 +9,10 @@
 constexpr uint32_t width = 800;
 constexpr uint32_t height = 600;
 
+ImGui_ImplVulkanH_Window g_MainWindowData;
+static int g_MinImageCount = 2;
+ImGui_ImplVulkanH_Window* wd;
+
 struct Buffer {
 	vk::UniqueBuffer buffer;
 	vk::UniqueDeviceMemory memory;
@@ -136,7 +140,7 @@ public:
 	}
 
 private:
-	ImGui_ImplVulkanH_Window g_MainWindowData = {};
+	
 	vk::UniqueRenderPass renderPass;
 	ImDrawData* draw_data;
 	ImGuiContext* imGuicontext;
@@ -190,8 +194,13 @@ private:
 		glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 		window = glfwCreateWindow(width, height, "vulkanRaytracing", nullptr, nullptr);
 
+		wd = &g_MainWindowData;
 		//initImGui();
 		//ImGui_ImplGlfw_InitForVulkan(window, true);
+		//SetUpVulkanWindow(wd, *surface, width, height);
+
+		//
+		//
 	}
 
 	void initVulkan() {
@@ -200,6 +209,7 @@ private:
 		};
 
 		instance = vkutils::createInstance(VK_API_VERSION_1_2, layers);
+		std::cout << "create vulkan instance" << std::endl;
 		debugMessenger = vkutils::createDebugMessenger(*instance);
 		surface = vkutils::createSurface(*instance, window);
 
@@ -225,12 +235,15 @@ private:
 		commandBuffer = vkutils::createCommandBuffer(*device, *commandPool);
 
 		surfaceFormat = vkutils::chooseSurfaceFormat(physicalDevice, *surface);
-		swapchain = vkutils::createSwapchain(
+		wd->Swapchain = (vkutils::createSwapchain(
 			physicalDevice, *device, *surface, queueFamilyIndex,
 			vk::ImageUsageFlagBits::eStorage, surfaceFormat,
-			width, height, swapchainExtent);
+			width, height, swapchainExtent)).get();
 
-		swapchainImages = device->getSwapchainImagesKHR(*swapchain);
+		SetUpVulkanWindow(wd, *surface, width, height);
+
+		swapchainImages = device->getSwapchainImagesKHR(static_cast<vk::SwapchainKHR>(wd->Swapchain));
+		std::cout << "Number of swapchain images: " << swapchainImages.size() << std::endl;
 
 		createSwapchainImageViews();
 
@@ -245,6 +258,11 @@ private:
 		createDescriptorPool();
 		createDescSetLayout();
 		createDescriptorSet();
+
+		
+		initImGui();
+		ImGui_ImplGlfw_InitForVulkan(window, true);
+		
 
 		createRayTracingPipeline();
 
@@ -616,7 +634,7 @@ private:
 		vk::UniqueSemaphore imageAvailableSemaphore = device->createSemaphoreUnique({});
 
 		auto result = device->acquireNextImageKHR(
-			*swapchain, std::numeric_limits<uint64_t>::max(), *imageAvailableSemaphore);
+			static_cast<vk::SwapchainKHR>(wd->Swapchain), std::numeric_limits<uint64_t>::max(), *imageAvailableSemaphore);
 
 		if (result.result != vk::Result::eSuccess) {
 			std::cerr << "Failed to acquire next image.\n";
@@ -638,7 +656,7 @@ private:
 		queue.waitIdle();
 
 		vk::PresentInfoKHR presentInfo{};
-		presentInfo.setSwapchains(*swapchain);
+		presentInfo.setSwapchains(static_cast<const vk::SwapchainKHR&>(wd->Swapchain));
 		presentInfo.setImageIndices(imageIndex);
 		if (queue.presentKHR(presentInfo) != vk::Result::eSuccess) {
 			std::cerr << "Failed to present\n";
@@ -676,17 +694,41 @@ private:
 
 	void recordCommandBuffer(vk::Image image, ImGui_ImplVulkanH_Window* wd, ImDrawData* draw_data) {
 		vk::Semaphore image_acquired_semaphore = wd->FrameSemaphores[wd->SemaphoreIndex].ImageAcquiredSemaphore;
+
+		if (image_acquired_semaphore == VK_NULL_HANDLE) {
+			throw std::runtime_error("Image acquired semaphore is invalid!");
+		}
+
 		vk::Semaphore render_complete_semaphore = wd->FrameSemaphores[wd->SemaphoreIndex].RenderCompleteSemaphore;
+
+		std::cout << wd->FrameIndex << std::endl;
+
+		for (;;) {
+
+		}
+
 		auto res = device->acquireNextImageKHR(wd->Swapchain, UINT64_MAX, image_acquired_semaphore);
+
+		//if (res.result != vk::Result::eSuccess && res.result != vk::Result::eSuboptimalKHR) {
+		//	throw std::runtime_error("Failed to acquire next image! Result: " + vk::to_string(res.result));
+		//}
+
 		wd->FrameIndex = res.value;
 
+		if (wd->FrameIndex >= wd->ImageCount) {
+			throw std::runtime_error("FrameIndex is out of range!");
+		}
+
 		ImGui_ImplVulkanH_Frame* fd = &wd->Frames[wd->FrameIndex];
+		std::cout << wd->FrameIndex << std::endl;
+
+		device->waitForFences(vk::Fence(fd->Fence), VK_TRUE, UINT64_MAX);
 
 		device->resetCommandPool(fd->CommandPool);
 		vk::CommandBufferBeginInfo info = {};
 		info.flags |= vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
-		
-		
+		//
+		//
 
 		commandBuffer->begin(vk::CommandBufferBeginInfo{});
 
@@ -718,16 +760,16 @@ private:
 
 		commandBuffer->beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
 
-		ImGui::Render();
-		draw_data = ImGui::GetDrawData();
-		ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), *commandBuffer);
+		//ImGui::Render();
+		//draw_data = ImGui::GetDrawData();
+		//ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), *commandBuffer);
 
 		commandBuffer->endRenderPass();
 
 		vkutils::setImageLayout(*commandBuffer, image,
 			vk::ImageLayout::eGeneral, vk::ImageLayout::ePresentSrcKHR);
 
-		
+		//
 
 		commandBuffer->end();
 	}
@@ -737,9 +779,9 @@ private:
 		ImGui::SetCurrentContext(imGuicontext);
 
 		ImGui_ImplVulkan_InitInfo initInfo = {};
-		initInfo.Instance = *instance;
-		initInfo.PhysicalDevice = physicalDevice;
-		initInfo.Device = *device;
+		initInfo.Instance = instance.get();
+		initInfo.PhysicalDevice = static_cast<VkPhysicalDevice>(physicalDevice);
+		initInfo.Device = device.get();
 		initInfo.QueueFamily = queueFamilyIndex;
 		initInfo.Queue = queue;
 		initInfo.PipelineCache = VK_NULL_HANDLE;
@@ -747,7 +789,7 @@ private:
 		initInfo.Allocator = nullptr;
 		initInfo.MinImageCount = 2;
 		initInfo.ImageCount = swapchainImages.size();
-		initInfo.RenderPass = *renderPass;
+		initInfo.RenderPass = renderPass.get();
 		initInfo.CheckVkResultFn = nullptr;
 
 		ImGui_ImplVulkan_Init(&initInfo);
@@ -766,6 +808,26 @@ private:
 		ImGui::Checkbox("Check Box", &b);
 		ImGui::Text("Yeah");
 		ImGui::End();
+	}
+
+	void SetUpVulkanWindow(ImGui_ImplVulkanH_Window* wd, VkSurfaceKHR surface, int width, int height) {
+		wd->Surface = surface;
+
+		// Format‚ðŽw’è
+		const std::vector<VkFormat> requestSurfaceImageFormat = { VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8_UNORM, VK_FORMAT_R8G8B8_UNORM };
+		const VkColorSpaceKHR requestSurfaceColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+		wd->SurfaceFormat = ImGui_ImplVulkanH_SelectSurfaceFormat(physicalDevice, wd->Surface, requestSurfaceImageFormat.data(), requestSurfaceImageFormat.size(), requestSurfaceColorSpace);
+
+
+		// PresentMode‚ðŽw’è
+#ifdef IMGUI_UNLIMITED_FRAME_RATE
+		std::vector<vk::PresentModeKHR> present_modes = { vk::PresentModeKHR::eMailbox, vk::PresentModeKHR::eImmediate, vk::PresentModeKHR::eFifo };
+#else
+		std::vector<VkPresentModeKHR> present_modes = { VK_PRESENT_MODE_FIFO_KHR };
+#endif
+		wd->PresentMode = ImGui_ImplVulkanH_SelectPresentMode(physicalDevice, wd->Surface, present_modes.data(), present_modes.size());
+
+		ImGui_ImplVulkanH_CreateOrResizeWindow(*instance, physicalDevice, *device, wd, queueFamilyIndex, nullptr, width, height, g_MinImageCount);
 	}
 };
 
