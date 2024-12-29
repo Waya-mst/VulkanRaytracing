@@ -1,0 +1,89 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 1
+  },
+    "configurePresets": [
+        {
+            "name": "default",
+            "hidden": true,
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/out/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+                "VCPKG_TARGET_TRIPLET": "x64-windows",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "YES"
+            }
+        },
+        {
+            "name": "x64-release",
+            "inherits": "default",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_SYSTEM_NAME": "Windows",
+                "CMAKE_SYSTEM_VERSION": "10.0.19041.0"
+            }
+        },
+        {
+            "name": "x64-debug",
+            "inherits": "default",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_SYSTEM_NAME": "Windows",
+                "CMAKE_SYSTEM_VERSION": "10.0.19041.0"
+            }
+        },
+        {
+            "name": "x64-clang-debug",
+            "inherits": "default",
+            "cacheVariables": {
+                "CMAKE_CXX_COMPILER": "clang-cl",
+                "CMAKE_C_COMPILER": "clang-cl",
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_SYSTEM_NAME": "Windows",
+                "CMAKE_SYSTEM_VERSION": "10.0.19041.0"
+            }
+        },
+        {
+            "name": "x64-clang-release",
+            "inherits": "default",
+            "cacheVariables": {
+                "CMAKE_CXX_COMPILER": "clang-cl",
+                "CMAKE_C_COMPILER": "clang-cl",
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_SYSTEM_NAME": "Windows",
+                "CMAKE_SYSTEM_VERSION": "10.0.19041.0"
+            }
+        }
+    ],
+  "buildPresets": [
+    {
+        "name": "default",
+        "hidden": true,
+        "configurePreset": "default"
+    },
+
+    {
+      "name": "x64-release",
+      "inherits": "default",
+      "configurePreset": "x64-release"
+    },
+    {
+        "name": "x64-debug",
+        "inherits": "default",
+        "configurePreset": "x64-debug"
+    },
+    {
+        "name": "x64-clang-debug",
+        "inherits": "default",
+        "configurePreset": "x64-clang-debug"
+    },
+    {
+        "name": "x64-clang-release",
+        "inherits": "default",
+        "configurePreset": "x64-clang-release"
+    }
+  ]
+}
