@@ -259,12 +259,10 @@ private:
 		createDescSetLayout();
 		createDescriptorSet();
 
-		
+		createRayTracingPipeline();
+
 		initImGui();
 		ImGui_ImplGlfw_InitForVulkan(window, true);
-		
-
-		createRayTracingPipeline();
 
 		createShaderBindingTable();
 		
@@ -629,7 +627,7 @@ private:
 	}
 
 	void drawFrame() {
-		//deawImGui();
+		deawImGui();
 
 		vk::UniqueSemaphore imageAvailableSemaphore = device->createSemaphoreUnique({});
 
@@ -700,43 +698,35 @@ private:
 		}
 
 		vk::Semaphore render_complete_semaphore = wd->FrameSemaphores[wd->SemaphoreIndex].RenderCompleteSemaphore;
-
 		std::cout << wd->FrameIndex << std::endl;
-
-		for (;;) {
-
-		}
-
-		auto res = device->acquireNextImageKHR(wd->Swapchain, UINT64_MAX, image_acquired_semaphore);
-
+		auto err = vkAcquireNextImageKHR(device.get(), wd->Swapchain, UINT64_MAX, image_acquired_semaphore, VK_NULL_HANDLE, &wd->FrameIndex);
+		//auto res = device->acquireNextImageKHR(wd->Swapchain, UINT64_MAX, image_acquired_semaphore);
+		
 		//if (res.result != vk::Result::eSuccess && res.result != vk::Result::eSuboptimalKHR) {
 		//	throw std::runtime_error("Failed to acquire next image! Result: " + vk::to_string(res.result));
 		//}
 
-		wd->FrameIndex = res.value;
-
+		wd->FrameIndex = err;
+		std::cout << err << std::endl;
+		
 		if (wd->FrameIndex >= wd->ImageCount) {
 			throw std::runtime_error("FrameIndex is out of range!");
 		}
-
+		
 		ImGui_ImplVulkanH_Frame* fd = &wd->Frames[wd->FrameIndex];
-		std::cout << wd->FrameIndex << std::endl;
 
 		device->waitForFences(vk::Fence(fd->Fence), VK_TRUE, UINT64_MAX);
-
 		device->resetCommandPool(fd->CommandPool);
 		vk::CommandBufferBeginInfo info = {};
 		info.flags |= vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
-		//
-		//
 
 		commandBuffer->begin(vk::CommandBufferBeginInfo{});
-
+		
 		vkutils::setImageLayout(*commandBuffer, image,
 			vk::ImageLayout::ePresentSrcKHR, vk::ImageLayout::eGeneral);
-
+		
 		commandBuffer->bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, *pipeline);
-
+		
 		commandBuffer->bindDescriptorSets(
 			vk::PipelineBindPoint::eRayTracingKHR,
 			*pipelineLayout,
@@ -760,9 +750,10 @@ private:
 
 		commandBuffer->beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
 
-		//ImGui::Render();
-		//draw_data = ImGui::GetDrawData();
-		//ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), *commandBuffer);
+		ImGui::Render(); // ‚±‚±‚ÅŽ~‚Ü‚Á‚Ä‚é
+		//for (;;);
+		draw_data = ImGui::GetDrawData();
+		ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), *commandBuffer);
 
 		commandBuffer->endRenderPass();
 
