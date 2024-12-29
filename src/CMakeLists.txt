@@ -1,17 +1,18 @@
 set(SHADER_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders/")
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config.h.in ${CMAKE_CURRENT_SOURCE_DIR}/config.h)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config.h.in ${CMAKE_CURRENT_BINARY_DIR}/config.h)
 # FindPackage
 find_package(Vulkan     REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(glfw3       REQUIRED)
+find_package(imgui CONFIG REQUIRED)
 
-add_subdirectory(libs/imgui)
+#add_subdirectory(libs/imgui)
 
-if(NOT EXISTS "${CMAKE_SOURCE_DIR}/libs/imgui")
-    execute_process(
-        COMMAND git clone https://github.com/ocornut/imgui.git ${CMAKE_SOURCE_DIR}/libs/imgui
-    )
-endif()
+#if(NOT EXISTS "${CMAKE_SOURCE_DIR}/libs/imgui")
+#    execute_process(
+#        COMMAND git clone https://github.com/ocornut/imgui.git ${CMAKE_SOURCE_DIR}/libs/imgui
+#    )
+#endif()
 
 add_custom_command(
 	OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/raygen.rgen.spv
@@ -52,4 +53,4 @@ target_compile_options (${PROJECT_NAME}-src PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/Z
 
 add_dependencies(${PROJECT_NAME}-src compile_shaders)
 
-target_link_libraries( ${PROJECT_NAME}-src PRIVATE Vulkan::Vulkan glm::glm glfw imgui)
+target_link_libraries( ${PROJECT_NAME}-src PRIVATE Vulkan::Vulkan glm::glm glfw imgui::imgui)

@@ -2,16 +2,15 @@
 #include "config.h"
 #include "vkutils.hpp"
 #include <array>
+#include <filesystem>
 #include <imgui.h>
-#include <backends/imgui_impl_glfw.h>
-#include <backends/imgui_impl_vulkan.h>
+#include <imgui_impl_glfw.h>
+#include <imgui_impl_vulkan.h>
 
 constexpr uint32_t width = 800;
 constexpr uint32_t height = 600;
 
-ImGui_ImplVulkanH_Window g_MainWindowData;
-static int g_MinImageCount = 2;
-ImGui_ImplVulkanH_Window* wd;
+constexpr int g_MaxFramesInFlight = 2;
 
 struct Buffer {
 	vk::UniqueBuffer buffer;
@@ -88,7 +87,8 @@ struct AccelStruct {
 
 		buffer.init(physicalDevice, device,
 			buildSizes.accelerationStructureSize,
-			vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR,
+			vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR|
+			vk::BufferUsageFlagBits::eShaderDeviceAddress,
 			vk::MemoryPropertyFlagBits::eDeviceLocal);
 
 		vk::AccelerationStructureCreateInfoKHR createInfo{};
@@ -130,9 +130,11 @@ public:
 		initWindow();
 		initVulkan();
 
+		uint32_t frameIndex = 0;
 		while (!glfwWindowShouldClose(window)) {
 			glfwPollEvents();
-			drawFrame();
+			drawFrame(frameIndex);
+			frameIndex = (frameIndex + 1) % g_MaxFramesInFlight;
 		}
 
 		glfwDestroyWindow(window);
@@ -160,11 +162,17 @@ private:
 	vk::UniqueCommandPool commandPool;
 	vk::UniqueCommandBuffer commandBuffer;
 
-	vk::SurfaceFormatKHR surfaceFormat;
-	vk::UniqueSwapchainKHR swapchain;
-	std::vector<vk::Image> swapchainImages;
-	std::vector<vk::UniqueImageView> swapchainImageViews;
+	vk::SurfaceFormatKHR               surfaceFormat;
+	vk::UniqueSwapchainKHR             swapchain;
+	std::vector<vk::Image>             swapchainImages;
+	std::vector<vk::UniqueImageView>   swapchainImageViews;
 	std::vector<vk::UniqueFramebuffer> swapchainFramebuffers;
+	std::vector<vk::UniqueCommandPool> commandPoolsPerFrame;
+	std::vector<vk::CommandBuffer>     commandBuffersPerFrame;
+	std::vector<vk::UniqueSemaphore>   imageAvailableSemaphores;
+	std::vector<vk::UniqueSemaphore>   renderFinishedSemaphores;
+	std::vector<vk::UniqueFence>       inFlightFences;
+	std::vector<vk::UniqueDescriptorPool> descriptorPoolsForFrame;
 
 	vk::Extent2D swapchainExtent;
 
@@ -175,13 +183,13 @@ private:
 	std::vector<vk::PipelineShaderStageCreateInfo> shaderStages;
 	std::vector<vk::RayTracingShaderGroupCreateInfoKHR> shaderGroups;
 
-	vk::UniqueDescriptorPool descPool;
-	vk::UniqueDescriptorPool imGuiDescPool;
-	vk::UniqueDescriptorSetLayout descSetLayout;
-	vk::UniqueDescriptorSet descSet;
+	vk::UniqueDescriptorPool        descPool;
+	vk::UniqueDescriptorPool        imGuiDescPool;
+	vk::UniqueDescriptorSetLayout   descSetLayout;
+	std::vector<vk::DescriptorSet>  descSets;
 
-	vk::UniquePipeline pipeline;
-	vk::UniquePipelineLayout pipelineLayout;
+	vk::UniquePipeline            pipeline;
+	vk::UniquePipelineLayout      pipelineLayout;
 
 	Buffer sbt{};
 	vk::StridedDeviceAddressRegionKHR raygenRegion{};
@@ -193,8 +201,6 @@ private:
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 		glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 		window = glfwCreateWindow(width, height, "vulkanRaytracing", nullptr, nullptr);
-
-		wd = &g_MainWindowData;
 		//initImGui();
 		//ImGui_ImplGlfw_InitForVulkan(window, true);
 		//SetUpVulkanWindow(wd, *surface, width, height);
@@ -235,17 +241,19 @@ private:
 		commandBuffer = vkutils::createCommandBuffer(*device, *commandPool);
 
 		surfaceFormat = vkutils::chooseSurfaceFormat(physicalDevice, *surface);
-		wd->Swapchain = (vkutils::createSwapchain(
+		auto capabilities = physicalDevice.getSurfaceCapabilitiesKHR(static_cast<vk::SurfaceKHR>(*surface));
+		swapchainExtent = vkutils::chooseExtent(capabilities, width, height);
+
+		swapchain = (vkutils::createSwapchain(
 			physicalDevice, *device, *surface, queueFamilyIndex,
-			vk::ImageUsageFlagBits::eStorage, surfaceFormat,
-			width, height, swapchainExtent)).get();
+			vk::ImageUsageFlagBits::eColorAttachment|vk::ImageUsageFlagBits::eStorage, surfaceFormat,
+			width, height, swapchainExtent));
 
-		SetUpVulkanWindow(wd, *surface, width, height);
-
-		swapchainImages = device->getSwapchainImagesKHR(static_cast<vk::SwapchainKHR>(wd->Swapchain));
+		swapchainImages = device->getSwapchainImagesKHR(static_cast<vk::SwapchainKHR>(*swapchain));
 		std::cout << "Number of swapchain images: " << swapchainImages.size() << std::endl;
 
 		createSwapchainImageViews();
+		createFrameObjects();
 
 		createRenderPass();
 		createFramebuffers();
@@ -257,7 +265,7 @@ private:
 
 		createDescriptorPool();
 		createDescSetLayout();
-		createDescriptorSet();
+		createDescriptorSets();
 
 		createRayTracingPipeline();
 
@@ -288,14 +296,36 @@ private:
 			});
 	};
 
+	void createFrameObjects() {
+		imageAvailableSemaphores.reserve(g_MaxFramesInFlight);
+		renderFinishedSemaphores.reserve(g_MaxFramesInFlight);
+		inFlightFences.reserve(g_MaxFramesInFlight);
+		commandPoolsPerFrame.reserve(g_MaxFramesInFlight);
+		commandBuffersPerFrame.reserve(g_MaxFramesInFlight);
+		vk::SemaphoreCreateInfo semaphoreInfo{};
+
+		vk::FenceCreateInfo fenceInfo{};
+		fenceInfo.setFlags(vk::FenceCreateFlagBits::eSignaled);
+
+		for (int i = 0; i < g_MaxFramesInFlight; i++) {
+			imageAvailableSemaphores.push_back(device->createSemaphoreUnique(semaphoreInfo));
+			renderFinishedSemaphores.push_back(device->createSemaphoreUnique(semaphoreInfo));
+			inFlightFences.push_back(device->createFenceUnique(fenceInfo));
+			commandPoolsPerFrame.push_back(vkutils::createCommandPool(*device, queueFamilyIndex));
+			auto commandBuffers = device->allocateCommandBuffers(
+				vk::CommandBufferAllocateInfo(*commandPoolsPerFrame[i], vk::CommandBufferLevel::ePrimary, 1));
+			commandBuffersPerFrame.push_back(std::move(commandBuffers.front()));
+		}
+	}
+
 	void createRenderPass() {
 		vk::AttachmentDescription colorAttachment({}, vk::Format::eB8G8R8A8Unorm,
 			vk::SampleCountFlagBits::e1,
-			vk::AttachmentLoadOp::eClear,
+			vk::AttachmentLoadOp::eLoad,
 			vk::AttachmentStoreOp::eStore,
 			vk::AttachmentLoadOp::eDontCare,
 			vk::AttachmentStoreOp::eDontCare,
-			vk::ImageLayout::eUndefined,
+			vk::ImageLayout::eColorAttachmentOptimal,
 			vk::ImageLayout::ePresentSrcKHR);
 
 		vk::AttachmentReference colorAttachmentRef(0, vk::ImageLayout::eColorAttachmentOptimal);
@@ -329,7 +359,8 @@ private:
 
 		vk::BufferUsageFlags bufferUsage{
 			vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
-			vk::BufferUsageFlagBits::eShaderDeviceAddress };
+			vk::BufferUsageFlagBits::eShaderDeviceAddress 
+		};
 
 		vk::MemoryPropertyFlags memoryProperty{
 			vk::MemoryPropertyFlagBits::eHostVisible |
@@ -413,10 +444,14 @@ private:
 	void addShader(uint32_t shaderIndex,
 		const std::string& filename,
 		vk::ShaderStageFlagBits stage) {
-		std::cout << "Loading shader: " << SHADER_ROOT_DIR + filename << std::endl;
+		auto shader_bin_root = std::filesystem::current_path();
+
+
+
+		std::cout << "Loading shader: " << shader_bin_root/filename << std::endl;
 
 		shaderModules[shaderIndex] =
-			vkutils::createShaderModule(*device, SHADER_ROOT_DIR + filename);
+			vkutils::createShaderModule(*device, (shader_bin_root / filename).string());
 		std::cout << "after createShader" << std::endl;
 		shaderStages[shaderIndex].setStage(stage);
 		shaderStages[shaderIndex].setModule(*shaderModules[shaderIndex]);
@@ -477,13 +512,13 @@ private:
 
 	void createDescriptorPool() {
 		std::vector<vk::DescriptorPoolSize> poolSizes = {
-			{ vk::DescriptorType::eAccelerationStructureKHR, 1},
-			{ vk::DescriptorType::eStorageImage, 1 },
+			{ vk::DescriptorType::eAccelerationStructureKHR, (uint32_t) swapchainImageViews.size()},
+			{ vk::DescriptorType::eStorageImage,  (uint32_t)swapchainImageViews.size() },
 		};
 
 		vk::DescriptorPoolCreateInfo createInfo{};
 		createInfo.setPoolSizes(poolSizes);
-		createInfo.setMaxSets(1);
+		createInfo.setMaxSets(swapchainImageViews.size());
 		createInfo.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet);
 		descPool = device->createDescriptorPoolUnique(createInfo);
 
@@ -529,13 +564,20 @@ private:
 		descSetLayout = device->createDescriptorSetLayoutUnique(createInfo);
 	}
 
-	void createDescriptorSet() {
+	void createDescriptorSets() {
 		std::cout << "Create Descriptor Set\n";
 
 		vk::DescriptorSetAllocateInfo allocateInfo{};
 		allocateInfo.setDescriptorPool(*descPool);
-		allocateInfo.setSetLayouts(*descSetLayout);
-		descSet = std::move(device->allocateDescriptorSetsUnique(allocateInfo).front());
+		auto descSetLayouts = std::vector<vk::DescriptorSetLayout>(swapchainImageViews.size(), *descSetLayout);
+		allocateInfo.setSetLayouts(descSetLayouts);
+		descSets = device->allocateDescriptorSets(allocateInfo);
+
+		auto imageIndex = 0;
+		for (auto descSet : descSets) {
+			updateDescriptorSet(descSet, *swapchainImageViews[imageIndex]);
+			imageIndex++;
+		}
 	}
 
 	void createRayTracingPipeline() {
@@ -626,43 +668,58 @@ private:
 		hitRegion.setDeviceAddress(sbt.address + raygenRegion.size + missRegion.size);
 	}
 
-	void drawFrame() {
+	void drawFrame(uint32_t frameIndex) {
 		deawImGui();
-
-		vk::UniqueSemaphore imageAvailableSemaphore = device->createSemaphoreUnique({});
-
-		auto result = device->acquireNextImageKHR(
-			static_cast<vk::SwapchainKHR>(wd->Swapchain), std::numeric_limits<uint64_t>::max(), *imageAvailableSemaphore);
-
-		if (result.result != vk::Result::eSuccess) {
-			std::cerr << "Failed to acquire next image.\n";
-			std::abort();
+		auto& imageAvailableSemaphore = imageAvailableSemaphores[frameIndex];
+		auto& renderFinishedSemaphore = renderFinishedSemaphores[frameIndex];
+		device->waitForFences(*inFlightFences[frameIndex], VK_TRUE, UINT64_MAX);
+		device->resetFences(*inFlightFences[frameIndex]);
+		uint32_t imageIndex = 0u;
+		try {
+			auto result = vk::Result::eSuccess;
+			std::tie(result,imageIndex) = device->acquireNextImageKHR(
+				static_cast<vk::SwapchainKHR>(*swapchain), std::numeric_limits<uint64_t>::max(), *imageAvailableSemaphore
+			);
+			if (result == vk::Result::eSuboptimalKHR) {
+				//recreateSwapchain();
+				return;
+			}
+		}
+		catch (vk::OutOfDateKHRError&) {
+			//recreateSwapchain();
+			return;
 		}
 
-		uint32_t imageIndex = result.value;
 
-		updateDescriptorSet(*swapchainImageViews[imageIndex]);
-		recordCommandBuffer(swapchainImages[imageIndex], &g_MainWindowData, draw_data);
+		device->resetCommandPool(*commandPoolsPerFrame[frameIndex], {});
+		recordCommandBuffer(commandBuffersPerFrame[frameIndex], swapchainImages[imageIndex], imageIndex, draw_data);
 
-		vk::PipelineStageFlags waitStage{ vk::PipelineStageFlagBits::eTopOfPipe };
+		vk::PipelineStageFlags waitStage{ vk::PipelineStageFlagBits::eColorAttachmentOutput };
 		vk::SubmitInfo submitInfo{};
 		submitInfo.setWaitDstStageMask(waitStage);
-		submitInfo.setCommandBuffers(*commandBuffer);
+		submitInfo.setCommandBuffers(commandBuffersPerFrame[frameIndex]);
 		submitInfo.setWaitSemaphores(*imageAvailableSemaphore);
-		queue.submit(submitInfo);
-
-		queue.waitIdle();
+		submitInfo.setSignalSemaphores(*renderFinishedSemaphore);
+		queue.submit(submitInfo, *inFlightFences[frameIndex]);
 
 		vk::PresentInfoKHR presentInfo{};
-		presentInfo.setSwapchains(static_cast<const vk::SwapchainKHR&>(wd->Swapchain));
+		presentInfo.setSwapchains(static_cast<const vk::SwapchainKHR&>(*swapchain));
 		presentInfo.setImageIndices(imageIndex);
-		if (queue.presentKHR(presentInfo) != vk::Result::eSuccess) {
-			std::cerr << "Failed to present\n";
-			std::abort();
+		presentInfo.setWaitSemaphores(*renderFinishedSemaphore);
+		try {
+			vk::Result result = queue.presentKHR(presentInfo);
+			if (result == vk::Result::eSuboptimalKHR) {
+				//recreateSwapchain();
+				return;
+			}
+		}
+		catch (vk::OutOfDateKHRError&) {
+			//recreateSwapchain();
+			return;
 		}
 	}
 
-	void updateDescriptorSet(vk::ImageView imageView) {
+	void updateDescriptorSet(vk::DescriptorSet descSet,vk::ImageView imageView) {
 		// DescriptorSetはshader実行中に各頂点,各ピクセル毎に共通して使われるリソースをまとめるもの
 		// 今回はTLASと結果を書き込むためのイメージが共通リソースとして設定されてる
 		// イメージに関してはスワップチェーンの~枚目みたいな指定の仕方
@@ -672,7 +729,7 @@ private:
 		vk::WriteDescriptorSetAccelerationStructureKHR accelInfo{};
 		accelInfo.setAccelerationStructures(*topAccel.accel);
 
-		writes[0].setDstSet(*descSet);
+		writes[0].setDstSet(descSet);
 		writes[0].setDstBinding(0);
 		writes[0].setDescriptorCount(1);
 		writes[0].setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR);
@@ -682,7 +739,7 @@ private:
 		imageInfo.setImageView(imageView);
 		imageInfo.setImageLayout(vk::ImageLayout::eGeneral);
 
-		writes[1].setDstSet(*descSet);
+		writes[1].setDstSet(descSet);
 		writes[1].setDstBinding(1);
 		writes[1].setDescriptorType(vk::DescriptorType::eStorageImage);
 		writes[1].setImageInfo(imageInfo);
@@ -690,79 +747,75 @@ private:
 		device->updateDescriptorSets(writes, nullptr);
 	}
 
-	void recordCommandBuffer(vk::Image image, ImGui_ImplVulkanH_Window* wd, ImDrawData* draw_data) {
-		vk::Semaphore image_acquired_semaphore = wd->FrameSemaphores[wd->SemaphoreIndex].ImageAcquiredSemaphore;
-
-		if (image_acquired_semaphore == VK_NULL_HANDLE) {
-			throw std::runtime_error("Image acquired semaphore is invalid!");
-		}
-
-		vk::Semaphore render_complete_semaphore = wd->FrameSemaphores[wd->SemaphoreIndex].RenderCompleteSemaphore;
-		std::cout << wd->FrameIndex << std::endl;
-		auto err = vkAcquireNextImageKHR(device.get(), wd->Swapchain, UINT64_MAX, image_acquired_semaphore, VK_NULL_HANDLE, &wd->FrameIndex);
-		//auto res = device->acquireNextImageKHR(wd->Swapchain, UINT64_MAX, image_acquired_semaphore);
-		
-		//if (res.result != vk::Result::eSuccess && res.result != vk::Result::eSuboptimalKHR) {
-		//	throw std::runtime_error("Failed to acquire next image! Result: " + vk::to_string(res.result));
-		//}
-
-		wd->FrameIndex = err;
-		std::cout << err << std::endl;
-		
-		if (wd->FrameIndex >= wd->ImageCount) {
-			throw std::runtime_error("FrameIndex is out of range!");
-		}
-		
-		ImGui_ImplVulkanH_Frame* fd = &wd->Frames[wd->FrameIndex];
-
-		device->waitForFences(vk::Fence(fd->Fence), VK_TRUE, UINT64_MAX);
-		device->resetCommandPool(fd->CommandPool);
+	void recordCommandBuffer(vk::CommandBuffer commandBuffer,vk::Image image, uint32_t imageIndex, ImDrawData* draw_data) {
 		vk::CommandBufferBeginInfo info = {};
 		info.flags |= vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
 
-		commandBuffer->begin(vk::CommandBufferBeginInfo{});
+		commandBuffer.begin(vk::CommandBufferBeginInfo{});;
+
+		auto imageMemoryBarrier = vk::ImageMemoryBarrier()
+			.setSrcAccessMask(vk::AccessFlags{})
+			.setDstAccessMask(vk::AccessFlagBits::eShaderWrite)
+			.setOldLayout(vk::ImageLayout::ePresentSrcKHR)
+			.setNewLayout(vk::ImageLayout::eGeneral)
+			.setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+			.setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+			.setImage(image)
+			.setSubresourceRange(vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+
+		commandBuffer.pipelineBarrier(
+			vk::PipelineStageFlagBits::eTopOfPipe,
+			vk::PipelineStageFlagBits::eRayTracingShaderKHR,
+			{},
+			{},
+			{},
+			{ imageMemoryBarrier });
 		
-		vkutils::setImageLayout(*commandBuffer, image,
-			vk::ImageLayout::ePresentSrcKHR, vk::ImageLayout::eGeneral);
+		commandBuffer.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, *pipeline);
 		
-		commandBuffer->bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, *pipeline);
-		
-		commandBuffer->bindDescriptorSets(
+		commandBuffer.bindDescriptorSets(
 			vk::PipelineBindPoint::eRayTracingKHR,
 			*pipelineLayout,
 			0,
-			*descSet,
+			descSets[imageIndex],
 			nullptr);
 
-		commandBuffer->traceRaysKHR(
+		commandBuffer.traceRaysKHR(
 			raygenRegion,
 			missRegion,
 			hitRegion,
 			{},
 			width,height, 1);
 
+		imageMemoryBarrier.srcAccessMask = vk::AccessFlagBits::eShaderWrite;
+		imageMemoryBarrier.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+		imageMemoryBarrier.oldLayout     = vk::ImageLayout::eGeneral;
+		imageMemoryBarrier.newLayout     = vk::ImageLayout::eColorAttachmentOptimal;
+
+		commandBuffer.pipelineBarrier(
+			vk::PipelineStageFlagBits::eRayTracingShaderKHR,
+			vk::PipelineStageFlagBits::eColorAttachmentOutput,
+			{},
+			{},
+			{},
+			{ imageMemoryBarrier });
+
 		vk::RenderPassBeginInfo renderPassInfo{};
 		renderPassInfo.setRenderPass(*renderPass);
-		renderPassInfo.setFramebuffer(fd->Framebuffer);
+		renderPassInfo.setFramebuffer(*swapchainFramebuffers[imageIndex]);
 		vk::Rect2D rect({ 0,0 }, { (uint32_t)width,(uint32_t)height });
 
 		renderPassInfo.setRenderArea(rect);
 
-		commandBuffer->beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
-
+		commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
 		ImGui::Render(); // ここで止まってる
 		//for (;;);
 		draw_data = ImGui::GetDrawData();
-		ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), *commandBuffer);
+		ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
 
-		commandBuffer->endRenderPass();
+		commandBuffer.endRenderPass();
 
-		vkutils::setImageLayout(*commandBuffer, image,
-			vk::ImageLayout::eGeneral, vk::ImageLayout::ePresentSrcKHR);
-
-		//
-
-		commandBuffer->end();
+		commandBuffer.end();
 	}
 
 	void initImGui() {
@@ -799,26 +852,6 @@ private:
 		ImGui::Checkbox("Check Box", &b);
 		ImGui::Text("Yeah");
 		ImGui::End();
-	}
-
-	void SetUpVulkanWindow(ImGui_ImplVulkanH_Window* wd, VkSurfaceKHR surface, int width, int height) {
-		wd->Surface = surface;
-
-		// Formatを指定
-		const std::vector<VkFormat> requestSurfaceImageFormat = { VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8_UNORM, VK_FORMAT_R8G8B8_UNORM };
-		const VkColorSpaceKHR requestSurfaceColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
-		wd->SurfaceFormat = ImGui_ImplVulkanH_SelectSurfaceFormat(physicalDevice, wd->Surface, requestSurfaceImageFormat.data(), requestSurfaceImageFormat.size(), requestSurfaceColorSpace);
-
-
-		// PresentModeを指定
-#ifdef IMGUI_UNLIMITED_FRAME_RATE
-		std::vector<vk::PresentModeKHR> present_modes = { vk::PresentModeKHR::eMailbox, vk::PresentModeKHR::eImmediate, vk::PresentModeKHR::eFifo };
-#else
-		std::vector<VkPresentModeKHR> present_modes = { VK_PRESENT_MODE_FIFO_KHR };
-#endif
-		wd->PresentMode = ImGui_ImplVulkanH_SelectPresentMode(physicalDevice, wd->Surface, present_modes.data(), present_modes.size());
-
-		ImGui_ImplVulkanH_CreateOrResizeWindow(*instance, physicalDevice, *device, wd, queueFamilyIndex, nullptr, width, height, g_MinImageCount);
 	}
 };
 
